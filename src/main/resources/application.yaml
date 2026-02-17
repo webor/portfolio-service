@@ -1,0 +1,35 @@
+logging:
+  level:
+    org.springframework.boot.autoconfigure.jdbc: DEBUG
+
+springdoc:
+  api-docs:
+    path: /api-docs
+  swagger-ui:
+    path: /swagger
+
+spring:
+  application:
+    name: portfolio
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/market_ingestor
+    username: admin
+    password: admin
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+
+server:
+  port: 8002
+
+feign:
+  client:
+    config:
+      default:
+        connectTimeout: 2000
+        readTimeout: 3000
