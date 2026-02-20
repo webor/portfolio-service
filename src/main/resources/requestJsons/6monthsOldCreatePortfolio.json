@@ -1,0 +1,190 @@
+{
+  "portfolioId": 10,
+  "userId": "U1014",
+  "asOf": "2026-02-19T19:23:24.372903",
+  "portfolioValue": 99955.44,
+  "drift": {
+    "before": {
+      "byCategoryPct": {
+        "LargeCap": 25.1871,
+        "Bonds": 65.098,
+        "Gold": 5.0433,
+        "Silver": 3.1555,
+        "Commodities": 1.9377
+      },
+      "targetPct": {
+        "LargeCap": 25,
+        "MidCap": 0,
+        "SmallCap": 0,
+        "Bonds": 65,
+        "Gold": 5,
+        "Silver": 3,
+        "Commodities": 2
+      },
+      "driftPct": {
+        "LargeCap": 0.1871,
+        "MidCap": 0,
+        "SmallCap": 0,
+        "Bonds": 0.098,
+        "Gold": 0.0433,
+        "Silver": 0.1555,
+        "Commodities": -0.0623
+      },
+      "driftDollarToTarget": {
+        "LargeCap": -187.03,
+        "MidCap": 0,
+        "SmallCap": 0,
+        "Bonds": -97.96,
+        "Gold": -43.31,
+        "Silver": -155.39,
+        "Commodities": 62.31
+      }
+    },
+    "status": {
+      "isDrifted": true,
+      "primaryDriftCategory": "LargeCap",
+      "reason": "LargeCap overweight by +0.19% vs target; multiple underweights funded by trimming LargeCap."
+    }
+  },
+  "tradePlan": {
+    "assumptions": {
+      "pricingSource": "latest priceFrame",
+      "allowFractionalShares": true,
+      "minimizeTurnover": "prefer existing holdings per category"
+    },
+    "idealTrades": [
+      {
+        "ticker": "BND",
+        "category": "Bonds",
+        "action": "SELL",
+        "amountUsd": 97.964,
+        "estimatedQty": 1.3099,
+        "price": 74.79,
+        "reason": "Bonds overweight"
+      },
+      {
+        "ticker": "GLD",
+        "category": "Gold",
+        "action": "SELL",
+        "amountUsd": 43.308,
+        "estimatedQty": 0.0945,
+        "price": 458.28,
+        "reason": "Gold overweight"
+      },
+      {
+        "ticker": "IVV",
+        "category": "LargeCap",
+        "action": "SELL",
+        "amountUsd": 187.03,
+        "estimatedQty": 0.2713,
+        "price": 689.35,
+        "reason": "LargeCap overweight"
+      },
+      {
+        "ticker": "SLV",
+        "category": "Silver",
+        "action": "SELL",
+        "amountUsd": 155.3868,
+        "estimatedQty": 2.217,
+        "price": 70.09,
+        "reason": "Silver overweight"
+      },
+      {
+        "ticker": "DBC",
+        "category": "Commodities",
+        "action": "BUY",
+        "amountUsd": 62.3088,
+        "estimatedQty": 2.5737,
+        "price": 24.21,
+        "reason": "Commodities underweight"
+      }
+    ],
+    "executableTradesRounded": {
+      "note": "Whole-share rounding; residual goes to cash unless you support fractional shares.",
+      "trades": [
+        {
+          "ticker": "BND",
+          "category": "Bonds",
+          "action": "SELL",
+          "qty": 1,
+          "price": 74.79,
+          "amountUsd": 74.79,
+          "reason": "Bonds overweight"
+        },
+        {
+          "ticker": "SLV",
+          "category": "Silver",
+          "action": "SELL",
+          "qty": 2,
+          "price": 70.09,
+          "amountUsd": 140.18,
+          "reason": "Silver overweight"
+        },
+        {
+          "ticker": "DBC",
+          "category": "Commodities",
+          "action": "BUY",
+          "qty": 3,
+          "price": 24.21,
+          "amountUsd": 72.63,
+          "reason": "Commodities underweight"
+        }
+      ],
+      "residualCashUsd": 142.34
+    }
+  },
+  "riskMetrics": {
+    "before": {
+      "exposurePct": {
+        "LargeCap": 25.1871,
+        "Bonds": 65.098,
+        "Gold": 5.0433,
+        "Silver": 3.1555,
+        "Commodities": 1.9377
+      },
+      "equityPct": 25.1871,
+      "defensivePct": 75.2345,
+      "concentration": {
+        "topHolding": {
+          "ticker": "BND",
+          "weightPct": 22.447
+        },
+        "topCategory": {
+          "category": "Bonds",
+          "weightPct": 65.098
+        },
+        "effectiveN": 7.057
+      }
+    },
+    "afterRounded": {
+      "exposurePct": {
+        "LargeCap": 25.0814,
+        "Bonds": 64.7502,
+        "Gold": 5.0222,
+        "Silver": 3.0026,
+        "Commodities": 2.0019,
+        "Cash": 0.1418
+      },
+      "equityPct": 25.0814,
+      "defensivePct": 74.7768,
+      "concentration": {
+        "topHolding": {
+          "ticker": "BND",
+          "weightPct": 22.3099
+        },
+        "topCategory": {
+          "category": "Bonds",
+          "weightPct": 64.7502
+        },
+        "effectiveN": 7.1162
+      }
+    },
+    "highlights": [],
+    "warnings": [
+      {
+        "code": "ROUNDING_RESIDUAL_CASH",
+        "message": "Whole-share rounding leaves ~$142.34 uninvested. If fractional shares are supported, you can get closer to exact targets."
+      }
+    ]
+  }
+}

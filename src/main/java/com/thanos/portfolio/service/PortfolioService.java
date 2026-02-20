@@ -1,9 +1,14 @@
 package com.thanos.portfolio.service;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.thanos.portfolio.dto.*;
+import com.thanos.portfolio.entities.PortfolioRebalanceApplied;
+import com.thanos.portfolio.entities.Side;
 import com.thanos.portfolio.entities.TriggerMode;
 import com.thanos.portfolio.model.*;
 import com.thanos.portfolio.entities.Portfolio;
+import com.thanos.portfolio.repository.PortfolioRebalanceAppliedRepo;
 import com.thanos.portfolio.repository.PortfolioRepo;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -13,13 +18,17 @@ import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.stream.Collectors;
 
 @Service
 public class PortfolioService {
 
+    private final PortfolioRebalanceAppliedRepo appliedRepo;
     private final PortfolioRepo repo;
+    private final ObjectMapper objectMapper =  new ObjectMapper();
 
-    public PortfolioService(PortfolioRepo repo) {
+    public PortfolioService(PortfolioRebalanceAppliedRepo appliedRepo, PortfolioRepo repo) {
+        this.appliedRepo = appliedRepo;
         this.repo = repo;
     }
 
@@ -165,7 +174,219 @@ public class PortfolioService {
         );
     }
 
+    @Transactional
+    public void applyRebalance(ApplyRebalanceRequest req) throws JsonProcessingException {
+        if (req.rebalanceId() == null || req.rebalanceId().isBlank()) {
+            throw new IllegalArgumentException("rebalanceId is required");
+        }
+        if (req.portfolioId() == null) {
+            throw new IllegalArgumentException("portfolioId is required");
+        }
+        if (req.executedTrades() == null || req.executedTrades().isEmpty()) {
+            return;
+        }
+        if (req.priceFrame() == null || req.priceFrame().isEmpty()) {
+            throw new IllegalArgumentException("priceFrame is required to update cash + totals");
+        }
+
+        // ✅ idempotency first (fast path)
+        if (appliedRepo.existsByPortfolioIdAndRebalanceId(req.portfolioId(), req.rebalanceId())) {
+            return;
+        }
+
+        // ✅ lock portfolio row to prevent concurrent updates
+        Portfolio entity = repo.findByIdForUpdate(req.portfolioId())
+                .orElseThrow(() -> new NoSuchElementException("Portfolio not found for id=" + req.portfolioId()));
+
+        // Re-check idempotency inside lock to avoid race
+        if (appliedRepo.existsByPortfolioIdAndRebalanceId(req.portfolioId(), req.rebalanceId())) {
+            return;
+        }
+
+        // Build price lookup
+        Map<String, PriceRow> priceBySymbol = req.priceFrame().stream()
+                .collect(Collectors.toMap(
+                        r -> r.symbol().toUpperCase(),
+                        r -> r,
+                        (a, b) -> a
+                ));
+
+        // Load holdings into mutable map
+        Map<Category, List<StockPosition>> holdings = new LinkedHashMap<>();
+        Map<Category, List<StockPosition>> current = fromEntityPortfolio(entity.getPortfolio());
+
+        for (Category c : Category.values()) {
+            List<StockPosition> list = current.getOrDefault(c, List.of());
+            holdings.put(c, new ArrayList<>(list));
+        }
+
+        BigDecimal freeCash = entity.getFreeCash() == null ? BigDecimal.ZERO : entity.getFreeCash();
+
+        // Apply trades
+        for (ExecutedTrade t : req.executedTrades()) {
+            if (t == null) continue;
+            String sym = t.ticker() == null ? null : t.ticker().toUpperCase();
+            if (sym == null || sym.isBlank()) continue;
+            if (t.qty() <= 0) continue;
+
+            PriceRow pr = priceBySymbol.get(sym);
+            if (pr == null || pr.price() == null) {
+                throw new IllegalArgumentException("Missing price for symbol=" + sym + " in priceFrame");
+            }
+            BigDecimal px = pr.price();
+
+            Category cat = Category.fromWire(pr.category()); // ✅ use priceFrame category as source of truth
+            List<StockPosition> list = holdings.get(cat);
+
+            int idx = indexOfTicker(list, sym);
+
+            if (t.side() == Side.BUY) {
+                BigDecimal cost = px.multiply(BigDecimal.valueOf(t.qty()));
+
+                // Optional strict cash check
+                // if (freeCash.compareTo(cost) < 0) throw new IllegalStateException("Insufficient cash for BUY " + sym);
+
+                freeCash = freeCash.subtract(cost);
+
+                if (idx == -1) {
+                    list.add(new StockPosition(
+                            sym,
+                            pr.name() != null ? pr.name() : sym,
+                            t.qty(),
+                            px,                 // avgPrice for new position
+                            BigDecimal.ZERO,
+                            BigDecimal.ZERO,
+                            Instant.now()
+                    ));
+                } else {
+                    StockPosition cur = list.get(idx);
+                    int oldQty = cur.quantity() == null ? 0 : cur.quantity();
+                    BigDecimal oldAvg = cur.avgPrice() == null ? BigDecimal.ZERO : cur.avgPrice();
+
+                    int newQty = oldQty + t.qty();
+                    BigDecimal newAvg = oldAvg.multiply(BigDecimal.valueOf(oldQty))
+                            .add(px.multiply(BigDecimal.valueOf(t.qty())))
+                            .divide(BigDecimal.valueOf(newQty), 8, RoundingMode.HALF_UP);
+
+                    list.set(idx, new StockPosition(
+                            cur.ticker(),
+                            cur.name(),
+                            newQty,
+                            newAvg,
+                            BigDecimal.ZERO,
+                            BigDecimal.ZERO,
+                            Instant.now()
+                    ));
+                }
+
+            } else if (t.side() == Side.SELL) {
+                if (idx == -1) {
+                    throw new IllegalStateException("Cannot SELL; no holding for " + sym + " in category " + cat);
+                }
+
+                StockPosition cur = list.get(idx);
+                int oldQty = cur.quantity() == null ? 0 : cur.quantity();
+                if (oldQty < t.qty()) {
+                    throw new IllegalStateException("Cannot SELL " + t.qty() + " of " + sym + "; only " + oldQty + " available");
+                }
+
+                // ✅ credit cash
+                BigDecimal proceeds = px.multiply(BigDecimal.valueOf(t.qty()));
+                freeCash = freeCash.add(proceeds);
+
+                int newQty = oldQty - t.qty();
+                if (newQty == 0) {
+                    list.remove(idx);
+                } else {
+                    list.set(idx, new StockPosition(
+                            cur.ticker(),
+                            cur.name(),
+                            newQty,
+                            cur.avgPrice(),     // avgPrice unchanged on sell
+                            BigDecimal.ZERO,
+                            BigDecimal.ZERO,
+                            Instant.now()
+                    ));
+                }
+            }
+        }
+
+        // Recompute totals + percentages using latest prices
+        Map<Category, List<StockPosition>> updated = recomputeTotalsAndPercentages(holdings, priceBySymbol);
+
+        entity.setPortfolio(toEntityPortfolio(updated));
+        entity.setFreeCash(freeCash);
+
+        repo.save(entity);
+        String tradesJson = objectMapper.writeValueAsString(req.executedTrades());
+        // record idempotency
+        appliedRepo.save(new PortfolioRebalanceApplied(entity.getId(), req.rebalanceId(), tradesJson));
+    }
+
     // ---------------- helpers ----------------
+
+    private int indexOfTicker(List<StockPosition> list, String sym) {
+        for (int i = 0; i < list.size(); i++) {
+            StockPosition sp = list.get(i);
+            if (sp.ticker() != null && sp.ticker().equalsIgnoreCase(sym)) return i;
+        }
+        return -1;
+    }
+
+    private Map<Category, List<StockPosition>> recomputeTotalsAndPercentages(
+            Map<Category, List<StockPosition>> holdings,
+            Map<String, PriceRow> priceBySymbol
+    ) {
+        BigDecimal totalValue = BigDecimal.ZERO;
+
+        // First pass: compute totalValue
+        for (var e : holdings.entrySet()) {
+            for (StockPosition sp : e.getValue()) {
+                PriceRow pr = priceBySymbol.get(sp.ticker().toUpperCase());
+                if (pr == null || pr.price() == null) continue;
+                totalValue = totalValue.add(pr.price().multiply(BigDecimal.valueOf(sp.quantity())));
+            }
+        }
+
+        if (totalValue.compareTo(BigDecimal.ZERO) <= 0) {
+            return holdings;
+        }
+
+        Map<Category, List<StockPosition>> out = new LinkedHashMap<>();
+
+        for (var e : holdings.entrySet()) {
+            Category cat = e.getKey();
+
+            BigDecimal finalTotalValue = totalValue;
+            List<StockPosition> updated = e.getValue().stream().map(sp -> {
+                PriceRow pr = priceBySymbol.get(sp.ticker().toUpperCase());
+                if (pr == null || pr.price() == null) return sp;
+
+                BigDecimal totalAmt = pr.price()
+                        .multiply(BigDecimal.valueOf(sp.quantity()))
+                        .setScale(2, RoundingMode.HALF_UP);
+
+                BigDecimal pct = totalAmt
+                        .divide(finalTotalValue, 8, RoundingMode.HALF_UP)
+                        .multiply(BigDecimal.valueOf(100))
+                        .setScale(4, RoundingMode.HALF_UP);
+
+                return new StockPosition(
+                        sp.ticker(),
+                        sp.name(),
+                        sp.quantity(),
+                        sp.avgPrice(),
+                        pct,
+                        totalAmt,
+                        Instant.now()
+                );
+            }).toList();
+
+            out.put(cat, updated);
+        }
+
+        return out;
+    }
 
     private Map<Category, List<StockPosition>> compute(Map<Category, List<StockPositionInput>> input) {
         Map<Category, List<StockPosition>> out = new LinkedHashMap<>();

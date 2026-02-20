@@ -1,4 +1,6 @@
 package com.thanos.portfolio.controller;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.thanos.portfolio.dto.ApplyRebalanceRequest;
 import com.thanos.portfolio.dto.PortfolioCreateRequest;
 import com.thanos.portfolio.dto.PortfolioResponse;
 import com.thanos.portfolio.service.PortfolioService;
@@ -6,7 +8,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
-@RequestMapping("/api/portfolio")
+@RequestMapping("/api/v1/portfolio")
 public class PortfolioController {
 
     private final PortfolioService service;
@@ -28,5 +30,15 @@ public class PortfolioController {
     @GetMapping("/{id}")
     public ResponseEntity<PortfolioResponse> getById(@PathVariable Long id) {
         return ResponseEntity.ok(service.getById(id));
+    }
+
+    @PostMapping("/apply")
+    public ResponseEntity<Void> apply(@RequestBody ApplyRebalanceRequest req) {
+        try {
+            service.applyRebalance(req);
+            return ResponseEntity.ok().build();
+        } catch (JsonProcessingException e) {
+            throw new RuntimeException(e);
+        }
     }
 }
