@@ -72,6 +72,48 @@ public class PortfolioService {
         );
     }
 
+    public List<PortfolioResponse> getByRmId(String rmId) {
+        List<Portfolio> portfolios = repo.findByRmId(rmId)
+                .orElseThrow(() -> new NoSuchElementException("No portfolios found for rmId=" + rmId));
+
+        return portfolios.stream().map(e -> {
+            UserDetails user = new UserDetails(
+                    e.getUserDetails().userId(),
+                    e.getUserDetails().firstName(),
+                    e.getUserDetails().lastName(),
+                    e.getUserDetails().email(),
+                    e.getUserDetails().phoneNumber()
+            );
+
+            RMDetails rm = new RMDetails(
+                    e.getRmDetails().rmId(),
+                    e.getRmDetails().firstName(),
+                    e.getRmDetails().lastName(),
+                    e.getRmDetails().email(),
+                    e.getRmDetails().phoneNumber()
+            );
+
+            Map<Category, List<StockPosition>> portfolio = fromEntityPortfolio(e.getPortfolio());
+
+            BigDecimal portfolioValue = sumPortfolioValue(portfolio);
+
+            return new PortfolioResponse(
+                    e.getId(),
+                    user,
+                    rm,
+                    portfolio,
+                    e.getTargetState(), // Map<Category, BigDecimal>
+                    portfolioValue,
+                    e.getUpdatedOn(),
+                    e.getCreatedOn(),
+                    e.getTriggerMode(),
+                    e.getFreeCash(),
+                    e.getDriftThresholdAbs(),
+                    e.getCooldownDays()
+            );
+        }).toList();
+    }
+
     @Transactional
     public PortfolioResponse createOrUpdate(PortfolioCreateRequest req) {
         String userId = req.userDetails().userId();

@@ -7,6 +7,8 @@ import com.thanos.portfolio.service.PortfolioService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
+
 @RestController
 @RequestMapping("/api/v1/portfolio")
 public class PortfolioController {
@@ -27,6 +29,11 @@ public class PortfolioController {
         return ResponseEntity.ok(service.getByUserId(userId));
     }
 
+    @GetMapping("/rm/{rmId}")
+    public ResponseEntity<List<PortfolioResponse>> getByRmId(@PathVariable String rmId) {
+        return ResponseEntity.ok(service.getByRmId(rmId));
+    }
+
     @GetMapping("/{id}")
     public ResponseEntity<PortfolioResponse> getById(@PathVariable Long id) {
         return ResponseEntity.ok(service.getById(id));
@@ -41,4 +48,5 @@ public class PortfolioController {
             throw new RuntimeException(e);
         }
     }
+
 }
